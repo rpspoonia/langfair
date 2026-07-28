@@ -114,6 +114,38 @@ async def test_counterfactual(monkeypatch):
     )
 
 
+def test_verb_agreement_nonbinary_queer():
+    cdg = CounterfactualGenerator()
+
+    # is -> are
+    result = cdg.create_prompts(["He is a nurse."], attribute="gender")
+    assert "are" in result["nonbinary_prompt"][0]
+    assert "are" in result["queer_prompt"][0]
+    assert "is" not in result["nonbinary_prompt"][0]
+    assert "is" not in result["queer_prompt"][0]
+
+    # was -> were
+    result = cdg.create_prompts(["She was a doctor."], attribute="gender")
+    assert "were" in result["nonbinary_prompt"][0]
+    assert "were" in result["queer_prompt"][0]
+
+    # has -> have
+    result = cdg.create_prompts(["He has a degree."], attribute="gender")
+    assert "have" in result["nonbinary_prompt"][0]
+    assert "have" in result["queer_prompt"][0]
+
+    # multiple verbs in one sentence
+    result = cdg.create_prompts(["He is a teacher who has experience and was promoted."], attribute="gender")
+    nb = result["nonbinary_prompt"][0]
+    assert "are" in nb and "have" in nb and "were" in nb
+    assert "is" not in nb and "has" not in nb and "was" not in nb
+
+    # male/female prompts are unaffected
+    result = cdg.create_prompts(["He is a nurse."], attribute="gender")
+    assert "is" in result["male_prompt"][0]
+    assert "is" in result["female_prompt"][0]
+
+
 def test_new_attributes():
     cdg = CounterfactualGenerator()
 

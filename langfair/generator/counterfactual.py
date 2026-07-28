@@ -180,8 +180,10 @@ class CounterfactualGenerator(ResponseGenerator):
         tiktoken_model_name: str
            The name of the OpenAI model to use for token counting.
 
-        attribute: str, either 'gender' or 'race'
-            Specifies attribute to be used for counterfactual generation
+        attribute: str
+            Specifies attribute to be used for counterfactual generation. One of 'gender', 'race',
+            'age', 'health-condition', 'nationality', 'physical-appearance', 'religion',
+            'sexual-orientation', or 'socioeconomic-class'.
 
         example_responses : list of strings, default=None
            A list of example responses. If provided, the function will estimate the response tokens based on these examples
@@ -231,8 +233,8 @@ class CounterfactualGenerator(ResponseGenerator):
         texts : list of strings
             A list of texts to be parsed for protected attribute words
 
-        attribute : {'race','gender'}, default=None
-            Specifies what to parse for among race words and gender words. Must be specified
+        attribute : {'race', 'gender', 'age', 'health-condition', 'nationality', 'physical-appearance', 'religion', 'sexual-orientation', 'socioeconomic-class'}, default=None
+            Specifies what to parse for among protected attribute words. Must be specified
             if custom_list is None
 
         custom_list : List[str], default=None
@@ -268,8 +270,8 @@ class CounterfactualGenerator(ResponseGenerator):
         prompts : List[str]
             A list of prompts on which counterfactual substitution and response generation will be done
 
-        attribute : {'gender', 'race'}, default=None
-            Specifies whether to use race or gender for counterfactual substitution. Must be provided if
+        attribute : {'gender', 'race', 'age', 'health-condition', 'nationality', 'physical-appearance', 'religion', 'sexual-orientation', 'socioeconomic-class'}, default=None
+            Specifies attribute to use for counterfactual substitution. Must be provided if
             custom_dict is None.
 
         custom_dict : Dict[str, List[str]], default=None
@@ -379,8 +381,8 @@ class CounterfactualGenerator(ResponseGenerator):
         prompts : list of strings
             A list of prompts on which counterfactual substitution and response generation will be done
 
-        attribute : {'gender', 'race'}, default=None
-            Specifies whether to use race or gender for counterfactual substitution. Must be provided if
+        attribute : {'gender', 'race', 'age', 'health-condition', 'nationality', 'physical-appearance', 'religion', 'sexual-orientation', 'socioeconomic-class'}, default=None
+            Specifies attribute to use for counterfactual substitution. Must be provided if
             custom_dict is None.
 
         custom_dict : Dict[str, List[str]], default=None
@@ -651,6 +653,22 @@ class CounterfactualGenerator(ResponseGenerator):
         elif custom_list:
             return list(set(tokens) & set(custom_list))
 
+    # Pronouns that take plural verb forms; used by _fix_verb_agreement.
+    _PLURAL_PRONOUNS = {"they", "xe", "ey", "zie"}
+
+    @staticmethod
+    def _fix_verb_agreement(text: str) -> str:
+        """Conjugate singular verbs to plural after they/xe/ey/zie substitution."""
+        conjugations = [
+            (r"\bis\b", "are"),
+            (r"\bwas\b", "were"),
+            (r"\bhas\b", "have"),
+        ]
+        result = text
+        for pattern, replacement in conjugations:
+            result = re.sub(pattern, replacement, result)
+        return result
+
     def _sub_from_dict(
         self, ref_dict: Dict[str, List[str]], text: str
     ) -> Dict[str, List[str]]:
@@ -677,14 +695,23 @@ class CounterfactualGenerator(ResponseGenerator):
             for i, element in enumerate(lower_tokens):
                 if element in ref_values:
                     substitution = ref_dict[key][ref_values[element]]
-                    output_dict[key][i] = (
+                    chosen = (
                         random.choice(substitution)  # noqa: S311
                         if isinstance(substitution, list)
                         else substitution
                     )
+                    output_dict[key][i] = chosen
                 else:
                     output_dict[key][i] = element
-            output_dict[key] = self.detokenizer.detokenize(output_dict[key])
+            result = self.detokenizer.detokenize(output_dict[key])
+            # Plural-style pronouns (they/xe/ey/zie) require plural verb forms.
+            if key in {"nonbinary", "queer"} or any(
+                token in self._PLURAL_PRONOUNS
+                for token in output_dict[key]
+                if isinstance(token, str)
+            ):
+                result = self._fix_verb_agreement(result)
+            output_dict[key] = result
 
         return output_dict
 
